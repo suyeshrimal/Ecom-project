@@ -1,11 +1,16 @@
 from django.shortcuts import render,redirect
-from store_app.models import Product,Categories,Filter_Price,Color,Brand,Contact_us
+from store_app.models import Product,Categories,Filter_Price,Color,Brand,Contact_us,Order,OrderItem
 from django.conf import settings
 from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate,login,logout
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import csrf_exempt
 from cart.cart import Cart
+
+#install and import esewa
+import razorpay
+client = razorpay.Client(auth={settings.RAZOR_KEY_ID,settings.RAZOR_KEY_SECRET})
 
 def BASE(request):
     return render(request,'Main/base.html')
@@ -186,7 +191,95 @@ def cart_detail(request):
 
 
 def Check_out(request):
-    return render(request,'cart/checkout.html')
+    amount_str = request.POST.get("amount")
+    amount_float = float(amount_str)
+    amount = int(amount_float)
+    payment = client.order.create(
+        {
+            "amount": amount,
+            "currency": "INR",
+            "payment_capture": "1"
+        })
+    order_id = payment["id"]
+    context = {
+        "order_id":order_id,
+        "payment":payment,
+    }
+    return render(request,'cart/checkout.html', context)
 
 def PLACE_ORDER(request):
-    return render(request,'cart/placeorder.html')
+    if request.method == "POST":
+        uid =request.session.get("_auth_user_id")
+        user = User.objects.get(id = uid)
+        cart = request.session.get("cart")
+        firstname = request.POST.get("firstname")
+        lastname = request.POST.get("lastname")
+        country = request.POST.get("country")
+        address = request.POST.get("address")
+        city = request.POST.get("city")
+        state = request.POST.get("state")
+        postcode = request.POST.get("postcode")
+        phone = request.POST.get("phone")
+        email = request.POST.get("email")
+        amount = request.POST.get("amount")
+
+        order_id = request.POST.get("order_id")
+        payment = request.POST.get("payment")
+
+        context = {
+            'order_id':order_id,
+        }
+        order = Order(
+            user = user,
+            firstname = firstname,
+            lastname = lastname,
+            country = country,
+            city = city,
+            address = address,
+            state = state,
+            postcode = postcode,
+            phone = phone,
+            email = email,
+            payment_id = order_id,
+            amount = amount,
+        )
+        order.save()
+        for i in cart:
+            a = (int(cart[i]['price']))
+            b = cart[i]['quantity']
+            total = a * b
+
+            item = OrderItem(
+                user = user,
+                order = order,
+                product = cart[i]['name'],
+                image = cart[i]['image'],
+                quantity = cart[i]['quantity'],
+                price = cart[i]['price'],
+                total = total
+            )
+            item.save()
+        return render(request,'cart/placeorder.html', context)
+    
+@csrf_exempt
+def success(request):
+    if request.method == "POST":
+        a = request.POST
+        order_id = ""
+        for key, val in a.items():
+            if key == "razorpay_order_id":
+                order_id = val
+                break
+        user = Order.objects.filter(payment_id = order_id).first()
+        user.paid = True
+        user.Save()
+    return render(request, "cart/thankyou.html")
+
+def Your_Order(request):
+    uid =request.session.get("_auth_user_id")
+    user = User.objects.get(id = uid)
+    order = OrderItem.objects.filter(user = user)
+    context = {
+        'order':order,
+    }
+    return render(request, 'Main/your_order.html',context)

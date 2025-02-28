@@ -17,6 +17,8 @@ class OrderItemTabularinline(admin.TabularInline):
 
 class OrderAdmin(admin.ModelAdmin):
     inlines=[OrderItemTabularinline]
+    list_display = ['firstname','phone','email','payment_id','paid','date']
+    search_fields = ['firstname','email','payment_id']
 
 admin.site.register(Images)
 admin.site.register(Tag)
